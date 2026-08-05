@@ -197,3 +197,24 @@ test('the app refuses to build if the catalog names a handler that does not exis
     /has no handler; the catalog and code disagree/,
   );
 });
+
+test('the bare root redirects to the catalog rather than answering 404', async () => {
+  const s = await serve({ withPaywall: false });
+  try {
+    const res = await fetch(`${s.base}/`, { redirect: 'manual' });
+    assert.equal(res.status, 302, 'a 404 on the root reads as a dead service');
+    assert.equal(res.headers.get('location'), '/catalog');
+  } finally {
+    await s.close();
+  }
+});
+
+test('following the root redirect lands on a usable catalog', async () => {
+  const s = await serve({ withPaywall: false });
+  try {
+    const body = await (await fetch(`${s.base}/`)).json();
+    assert.ok(Array.isArray(body.routes) && body.routes.length > 0);
+  } finally {
+    await s.close();
+  }
+});

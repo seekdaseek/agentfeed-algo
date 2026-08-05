@@ -51,6 +51,13 @@ export function createApp(cfg, {
     });
   });
 
+  // The bare domain must not answer 404. An agent or a person who types the
+  // host and gets a not-found reasonably concludes the service is dead, so the
+  // root points at the catalog, which is the document that explains everything
+  // else. 302 rather than 301 because the root may earn its own page later and
+  // a permanent redirect is cached forever.
+  app.get('/', (_req, res) => res.redirect(302, '/catalog'));
+
   app.get('/catalog', (_req, res) => {
     res.json({
       service: 'AgentFeed on Algorand',
