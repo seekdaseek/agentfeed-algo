@@ -35,6 +35,20 @@ Every route carries the required `x402-global-challenge` tag and declares a Baza
 
 Settlement runs through the GoPlausible facilitator on Algorand mainnet. Two payments have completed end to end.
 
+## Use it from an agent
+
+The endpoint is a URL, which is invisible to the thing meant to pay for it. So this ships an MCP server too.
+
+    npx -y @seekdaseek/agentfeed-algo-mcp
+
+Or in an MCP client config, as a server named agentfeed-algo running `npx -y @seekdaseek/agentfeed-algo` with the binary `agentfeed-algo-mcp`, and one environment variable, `ALGO_PAYER_MNEMONIC`, holding the mnemonic for an Algorand account that has USDC and is opted in to asset 31566704.
+
+Six tools. Four paid, one per route. Two free: `catalog` lists everything sold and what it costs, and `payer_status` reports your balances and anything blocking payment. Both work with no key at all, so you can install this, look at what exists, and decide afterwards whether to fund anything.
+
+Payment comes from your own account. There is no key of ours in the loop and no account to create.
+
+An unmeasured response comes back as a tool error rather than as data. The HTTP layer already refuses to bill it, but an agent reading a tool result needs the same signal, and a hole that looks like an answer is worse than no answer.
+
 ## The thing that makes it worth paying for
 
 Every response carries its own status, and there are three of them.

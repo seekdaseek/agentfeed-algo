@@ -1,7 +1,7 @@
 {
-  "name": "agentfeed-algo",
+  "name": "@seekdaseek/agentfeed-algo",
   "version": "0.1.0",
-  "description": "A paid x402 data API on Algorand. Sells a cross-venue liquidation tape per call in USDC, and says when it does not know.",
+  "description": "A paid x402 data API on Algorand mainnet, with an MCP server. Sells a cross-exchange liquidation tape per call in USDC, and says when it does not know.",
   "main": "src/server.mjs",
   "directories": {
     "doc": "docs",
@@ -18,27 +18,44 @@
     "x402",
     "algorand",
     "usdc",
+    "mcp",
     "agent",
     "micropayments",
     "market-data",
-    "liquidations"
+    "liquidations",
+    "model-context-protocol"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@x402/avm": "^2.21.0",
     "@x402/core": "^2.21.0",
     "@x402/express": "^2.21.0",
     "@x402/extensions": "^2.21.0",
     "@x402/fetch": "^2.21.0",
     "algosdk": "^3.6.0",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "zod": "^3.23.0"
   },
   "type": "module",
   "bin": {
-    "agentfeed-algo": "bin/agentfeed-algo.mjs"
+    "agentfeed-algo": "bin/agentfeed-algo.mjs",
+    "agentfeed-algo-mcp": "mcp/server.mjs"
   },
   "engines": {
     "node": ">=22"
+  },
+  "files": [
+    "src",
+    "bin",
+    "mcp",
+    "scripts",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }
