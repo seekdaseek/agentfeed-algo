@@ -1,0 +1,6 @@
+node_modules/
+.env
+.env.*
+settlements.jsonl
+*.db
+*.log

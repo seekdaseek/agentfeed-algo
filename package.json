@@ -1,0 +1,44 @@
+{
+  "name": "agentfeed-algo",
+  "version": "0.1.0",
+  "description": "A paid x402 data API on Algorand. Sells a cross-venue liquidation tape per call in USDC, and says when it does not know.",
+  "main": "src/server.mjs",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "check": "for f in src/*.mjs bin/*.mjs test/*.mjs; do node --check \"$f\" || exit 1; done; echo 'syntax ok'",
+    "doctor": "node bin/agentfeed-algo.mjs doctor",
+    "catalog": "node bin/agentfeed-algo.mjs catalog",
+    "serve": "node bin/agentfeed-algo.mjs serve"
+  },
+  "keywords": [
+    "x402",
+    "algorand",
+    "usdc",
+    "agent",
+    "micropayments",
+    "market-data",
+    "liquidations"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@x402/avm": "^2.21.0",
+    "@x402/core": "^2.21.0",
+    "@x402/express": "^2.21.0",
+    "@x402/extensions": "^2.21.0",
+    "@x402/fetch": "^2.21.0",
+    "algosdk": "^3.6.0",
+    "express": "^5.2.1"
+  },
+  "type": "module",
+  "bin": {
+    "agentfeed-algo": "bin/agentfeed-algo.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
