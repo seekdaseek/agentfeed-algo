@@ -1,0 +1,42 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.seekdaseek/agentfeed-algo",
+  "title": "AgentFeed on Algorand",
+  "description": "Cross-exchange liquidation tape, paid per call in USDC on Algorand. Free catalog, no key needed.",
+  "websiteUrl": "https://algo.ochinimus.app/catalog",
+  "repository": {
+    "url": "https://github.com/seekdaseek/agentfeed-algo",
+    "source": "github"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@seekdaseek/agentfeed-algo",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "ALGO_PAYER_MNEMONIC",
+          "description": "25 word mnemonic for the Algorand account that pays. Optional: the catalog tool needs no key.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "AGENTFEED_ALGO_URL",
+          "description": "Override the endpoint. Defaults to https://algo.ochinimus.app",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "ALGO_NETWORK",
+          "description": "mainnet or testnet. Defaults to mainnet.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
