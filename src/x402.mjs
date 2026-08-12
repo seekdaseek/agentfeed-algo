@@ -21,6 +21,7 @@ import { HTTPFacilitatorClient, x402ResourceServer } from '@x402/core/server';
 import { ExactAvmScheme } from '@x402/avm/exact/server';
 import { isAlgorandNetwork, normalizeAlgorandNetwork } from '@x402/avm';
 import { declareDiscoveryExtension } from '@x402/extensions';
+import { CHALLENGE_TAG } from './catalog.mjs';
 import { EVENT } from './ledger.mjs';
 import { priceFor } from './money.mjs';
 
@@ -106,6 +107,11 @@ export function buildRoutes(compiled, cfg) {
           payTo: cfg.payTo,
           price: priceFor(entry.micro, cfg.usdcAsaId),
           maxTimeoutSeconds: DEFAULT_MAX_TIMEOUT_SECONDS,
+          // Global x402 Challenge attribution. The leaderboard filters on
+          // accepts[].extra.tag, NOT resource.tags. Confirmed by the Algorand
+          // Foundation 2026-08-11; settlements before this were not counted.
+          // resource.tags stays as it is, for Bazaar discovery.
+          extra: { tag: CHALLENGE_TAG },
         },
       ],
       resource: `${cfg.baseUrl}${entry.path}`,
