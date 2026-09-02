@@ -5,6 +5,7 @@ import { createApp } from '../src/server.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { Ledger } from '../src/ledger.mjs';
 import { compileCatalog, CATALOG } from '../src/catalog.mjs';
+import { TITLE, tapeSnapshot, resetTapeCache } from '../src/landing.mjs';
 import { FakeTapeStore, rows, NOW, baseEnv } from './helpers.mjs';
 import { MissingTapeStore } from '../src/tape.mjs';
 
@@ -198,21 +199,93 @@ test('the app refuses to build if the catalog names a handler that does not exis
   );
 });
 
-test('the bare root redirects to the catalog rather than answering 404', async () => {
+test('the bare root serves an HTML page carrying a crawlable title', async () => {
   const s = await serve({ withPaywall: false });
   try {
-    const res = await fetch(`${s.base}/`, { redirect: 'manual' });
-    assert.equal(res.status, 302, 'a 404 on the root reads as a dead service');
-    assert.equal(res.headers.get('location'), '/catalog');
+    const res = await fetch(`${s.base}/`);
+    assert.equal(res.status, 200, 'a 404 or a redirect on the root reads as a dead service');
+    assert.match(res.headers.get('content-type') ?? '', /text\/html/);
+    const html = await res.text();
+    const title = /<title>([^<]+)<\/title>/.exec(html)?.[1];
+    assert.equal(
+      title,
+      TITLE,
+      'directories build the merchant label from this title; without it the service lists as a wallet address',
+    );
+    assert.match(html, /<meta property="og:title" content="[^"]+"/);
+    assert.match(html, /rel="apple-touch-icon"/);
   } finally {
     await s.close();
   }
 });
 
-test('following the root redirect lands on a usable catalog', async () => {
+test('the landing page lists every priced route at the catalog price', async () => {
   const s = await serve({ withPaywall: false });
   try {
-    const body = await (await fetch(`${s.base}/`)).json();
+    const html = await (await fetch(`${s.base}/`)).text();
+    for (const entry of CATALOG) {
+      assert.ok(html.includes(entry.path), `landing page omits ${entry.path}`);
+      assert.ok(html.includes(`$${entry.price}`), `landing page omits the price of ${entry.id}`);
+    }
+  } finally {
+    await s.close();
+  }
+});
+
+test('both icon paths answer with a PNG so a crawler finds one of them', async () => {
+  const s = await serve({ withPaywall: false });
+  try {
+    for (const p of ['/favicon.ico', '/apple-touch-icon.png']) {
+      const res = await fetch(`${s.base}${p}`);
+      assert.equal(res.status, 200, `${p} did not answer`);
+      assert.match(res.headers.get('content-type') ?? '', /image\/png/);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      assert.deepEqual([...bytes.slice(0, 4)], [0x89, 0x50, 0x4e, 0x47], `${p} is not a PNG`);
+    }
+  } finally {
+    await s.close();
+  }
+});
+
+test('a broken tape renders the landing panel as unmeasured, never as zeros', () => {
+  resetTapeCache();
+  const snap = tapeSnapshot(new MissingTapeStore(), { now: () => NOW });
+  assert.equal(snap.status, 'unmeasured');
+  assert.ok(snap.detail, 'an unmeasured panel must say what failed');
+  assert.equal(snap.events, undefined, 'a failed read must not become a count');
+});
+
+test('the landing page shows the unmeasured panel when the tape is missing', async () => {
+  resetTapeCache();
+  const s = await serve({ withPaywall: false, store: new MissingTapeStore() });
+  try {
+    const html = await (await fetch(`${s.base}/`)).text();
+    assert.match(html, /unmeasured/);
+    assert.ok(!/liquidations recorded/.test(html), 'a missing tape must not render a stat block');
+  } finally {
+    resetTapeCache();
+    await s.close();
+  }
+});
+
+test('the landing page carries the working surfaces a judge or agent would follow', async () => {
+  resetTapeCache();
+  const s = await serve({ withPaywall: false });
+  try {
+    const html = await (await fetch(`${s.base}/`)).text();
+    for (const href of ['/catalog', '/health', '/.well-known/x402', 'github.com/seekdaseek/agentfeed-algo']) {
+      assert.ok(html.includes(href), `landing page omits ${href}`);
+    }
+  } finally {
+    resetTapeCache();
+    await s.close();
+  }
+});
+
+test('the catalog stays reachable at its own path now that the root is a page', async () => {
+  const s = await serve({ withPaywall: false });
+  try {
+    const body = await (await fetch(`${s.base}/catalog`)).json();
     assert.ok(Array.isArray(body.routes) && body.routes.length > 0);
   } finally {
     await s.close();

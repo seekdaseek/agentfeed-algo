@@ -19,6 +19,7 @@ import express from 'express';
 import { paymentMiddleware } from '@x402/express';
 
 import { compileCatalog, sweepPrice, CATALOG } from './catalog.mjs';
+import { landingHtml, tapeSnapshot, ICON_PNG } from './landing.mjs';
 import { buildRoutes, buildResourceServer } from './x402.mjs';
 import { fromMicroUsdc } from './money.mjs';
 import { HANDLERS, MissingTapeStore } from './tape.mjs';
@@ -51,12 +52,33 @@ export function createApp(cfg, {
     });
   });
 
-  // The bare domain must not answer 404. An agent or a person who types the
-  // host and gets a not-found reasonably concludes the service is dead, so the
-  // root points at the catalog, which is the document that explains everything
-  // else. 302 rather than 301 because the root may earn its own page later and
-  // a permanent redirect is cached forever.
-  app.get('/', (_req, res) => res.redirect(302, '/catalog'));
+  // The root earns its own page, which the comment here used to anticipate.
+  // It answers HTML rather than redirecting to /catalog because every directory
+  // that lists this service builds its entry from a page title and an icon, and
+  // application/json carries neither: on the GoPlausible leaderboard this
+  // merchant rendered as a truncated wallet address for a month. The page is
+  // generated from the compiled catalog, so it cannot drift from what is sold.
+  app.get('/', (_req, res) => {
+    res
+      .type('html')
+      .set('Cache-Control', 'public, max-age=300')
+      .send(
+        landingHtml(cfg, compiled, {
+          sweep: fromMicroUsdc(sweepPrice(compiled)),
+          tape: tapeSnapshot(store, { now }),
+        }),
+      );
+  });
+
+  // Both names are served because crawlers disagree about which to ask for.
+  for (const iconPath of ['/favicon.ico', '/apple-touch-icon.png']) {
+    app.get(iconPath, (_req, res) => {
+      res
+        .type('image/png')
+        .set('Cache-Control', 'public, max-age=86400')
+        .send(ICON_PNG);
+    });
+  }
 
   app.get('/catalog', (_req, res) => {
     res.json({
@@ -199,7 +221,7 @@ function respondPaymentUnavailable(res, cfg, err) {
     facilitator: cfg.facilitatorUrl,
     network: cfg.caip2,
     retry_after_seconds: 30,
-    free_surfaces: ['/health', '/catalog', '/.well-known/x402'],
+    free_surfaces: ['/', '/health', '/catalog', '/.well-known/x402'],
     cause: err?.message ?? String(err),
   });
 }
