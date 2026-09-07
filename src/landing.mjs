@@ -7,7 +7,8 @@
  * no crawlable title as a truncated wallet address, which is what this service
  * looked like on the Global x402 Challenge leaderboard for a month.
  *
- * So the root answers HTML. TITLE is the string that becomes the public label.
+ * So the root answers HTML. The label the facilitator renders is og:site_name;
+ * TITLE is the string that feeds it (and <title> and og:title alongside).
  * Everything priced is read from the compiled catalog, never typed twice, and
  * the tape panel is queried live, so neither can drift from what is true.
  */
@@ -237,10 +238,12 @@ export function landingHtml(cfg, compiled, { sweep, tape } = {}) {
   td.d{max-width:46ch}
   td.q{font-family:var(--mono);color:var(--faint);font-size:12px;white-space:nowrap}
   td.c{font-family:var(--mono);white-space:nowrap;color:var(--live)}
+  .tscroll{overflow-x:auto}
   .free{font-family:var(--mono);font-size:12.5px;color:var(--faint);margin-top:13px}
   .free a{color:var(--alg);text-decoration:none;border-bottom:1px solid rgba(145,130,238,.35)}
 
   .two{display:grid;grid-template-columns:1.25fr 1fr;gap:22px;align-items:start}
+  .two>*{min-width:0}
   .codebox{position:relative;background:var(--panel);border:1px solid var(--line2);
            border-radius:13px;padding:16px 17px}
   .codebox code{font-family:var(--mono);font-size:12.5px;color:var(--ink);
@@ -311,12 +314,14 @@ ${tapePanel(snap)}
   </div>
 
   <h2 id="sold">What is sold</h2>
+  <div class="tscroll">
   <table>
     <thead><tr><th>Route</th><th>What the payment unlocks</th><th>Query</th><th>USDC</th></tr></thead>
     <tbody>
 ${rows}
     </tbody>
   </table>
+  </div>
   <p class="free">Free, no payment: <a href="/catalog">/catalog</a> &#183; <a href="/health">/health</a> &#183; <a href="/.well-known/x402">/.well-known/x402</a></p>
 
   <h2 id="call">Quick start</h2>

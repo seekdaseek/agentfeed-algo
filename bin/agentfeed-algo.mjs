@@ -37,7 +37,7 @@ Options
   --env-file   path to a dotenv style file, default .env
 
 Environment
-  ALGO_NETWORK           mainnet or testnet, default testnet
+  ALGO_NETWORK           mainnet or testnet. Unset means testnet; the live deployment runs mainnet
   ALGO_ALLOW_MAINNET     must be yes to run on mainnet
   ALGO_PAY_TO            Algorand address that receives payments
   X402_FACILITATOR_URL   default https://facilitator.goplausible.xyz
