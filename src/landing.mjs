@@ -149,7 +149,7 @@ export function landingHtml(cfg, compiled, { sweep, tape } = {}) {
 <meta property="og:type" content="website">
 <meta property="og:title" content="${esc(TITLE)}">
 <meta property="og:description" content="${esc(DESCRIPTION)}">
-<meta property="og:site_name" content="AgentFeed on Algorand">
+<meta property="og:site_name" content="${esc(TITLE)}">
 <meta property="og:url" content="${esc(base)}/">
 <meta name="twitter:card" content="summary">
 <link rel="icon" type="image/png" href="/favicon.ico">
