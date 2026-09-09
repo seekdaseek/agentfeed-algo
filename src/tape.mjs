@@ -382,9 +382,187 @@ export function venueIntegrity(store, { hours = 24, now = Date.now() }) {
   );
 }
 
+/**
+ * Bucket widths in milliseconds. Two only, and both chosen so the whole
+ * recorded span fits in one response: hourly is ~1,500 rows over the current
+ * tape, daily is ~65. A minute bucket would be ~90,000 rows and is deliberately
+ * not offered, because a route that sometimes returns 20MB is a route that
+ * sometimes times out after being paid for.
+ */
+export const HISTORY_BUCKETS = Object.freeze({ hour: 3_600_000, day: 86_400_000 });
+
+/**
+ * The complete recorded history for one symbol.
+ *
+ * Every other route on this tape caps at 168 hours. This one does not, and that
+ * is the whole product: the tape holds far more depth than anything sells, and
+ * a liquidation record cannot be backfilled after the fact, so the depth is the
+ * part that is genuinely scarce.
+ *
+ * Two honesty problems are specific to selling history, and both are answered
+ * in the payload rather than in prose a buyer will not read.
+ *
+ * First, coverage_start is per SYMBOL, not per tape. This tape began on one
+ * date; an individual symbol first appears whenever it first liquidated, which
+ * can be weeks later. Returning "full history" without saying where this
+ * symbol's record starts invites the buyer to read our start date as the
+ * market's, which is the coverage-gap-as-market-fact failure the whole service
+ * exists to avoid.
+ *
+ * Second, an absent bucket is ambiguous. A quiet hour and an hour when the
+ * collector was down produce exactly the same absence, and this tape cannot
+ * tell them apart. Rather than emit fabricated zero rows, the series carries
+ * only observed buckets and the payload states max_gap_buckets, so a buyer can
+ * see the largest unobserved run and decide for themselves whether to trust it.
+ */
+export function liquidationHistory(store, { symbol, bucket = 'hour', now = Date.now() }) {
+  const key = typeof bucket === 'string' ? bucket.trim().toLowerCase() : '';
+  const width = HISTORY_BUCKETS[key];
+  if (!width) {
+    return unmeasured({ source: SOURCE, basis: "bucket must be 'hour' or 'day'" });
+  }
+
+  const res = resolveSymbol(store, symbol);
+  if (!res.symbol) return resolutionEnvelope(res, symbol);
+
+  const { rows: spanRows, failure: spanFailure } = store.query(
+    'SELECT MIN(ts) AS first_ts, MAX(ts) AS last_ts, COUNT(*) AS n FROM liquidations WHERE symbol = ?',
+    [res.symbol],
+  );
+  if (spanFailure) return unmeasured({ source: SOURCE, basis: BASIS, failure: { reason: spanFailure } });
+
+  const first = Number(spanRows?.[0]?.first_ts);
+  const last = Number(spanRows?.[0]?.last_ts);
+  const spanCount = Number(spanRows?.[0]?.n);
+  if (!Number.isFinite(first) || !Number.isFinite(last) || !spanCount) {
+    return absent({
+      asOf: now,
+      source: SOURCE,
+      basis: `${res.symbol} is carried by this tape but holds no liquidation rows`,
+    });
+  }
+
+  const { rows, failure } = store.query(
+    'SELECT CAST(ts / ? AS INTEGER) AS b, exchange, side, COUNT(*) AS n, SUM(usd) AS usd ' +
+      'FROM liquidations WHERE symbol = ? GROUP BY b, exchange, side ORDER BY b',
+    [width, res.symbol],
+  );
+  if (failure) return unmeasured({ source: SOURCE, basis: BASIS, failure: { reason: failure } });
+  if (!rows.length) {
+    return absent({
+      asOf: now,
+      source: SOURCE,
+      basis: `${res.symbol} is covered by this tape and produced no bucketed rows`,
+    });
+  }
+
+  const byBucket = new Map();
+  const exchanges = new Set();
+  const unknownSides = new Set();
+  let totalUsd = 0;
+  let otherUsd = 0;
+  let countedRows = 0;
+
+  for (const r of rows) {
+    const usd = Number(r.usd);
+    const n = Number(r.n);
+    const b = Number(r.b);
+    if (!Number.isFinite(usd) || !Number.isFinite(n) || !Number.isFinite(b)) continue;
+    const ex = String(r.exchange);
+    exchanges.add(ex);
+    let slot = byBucket.get(b);
+    if (!slot) {
+      slot = { rows: 0, usd: 0, longs: 0, shorts: 0, other: 0, by_exchange: {} };
+      byBucket.set(b, slot);
+    }
+    slot.rows += n;
+    slot.usd += usd;
+    slot.by_exchange[ex] = (slot.by_exchange[ex] ?? 0) + usd;
+    const liquidated = SIDE_MEANING[r.side];
+    if (liquidated === 'longs') slot.longs += usd;
+    else if (liquidated === 'shorts') slot.shorts += usd;
+    else {
+      slot.other += usd;
+      otherUsd += usd;
+      unknownSides.add(String(r.side));
+    }
+    totalUsd += usd;
+    countedRows += n;
+  }
+
+  if (!byBucket.size) {
+    return unmeasured({
+      source: SOURCE,
+      basis: BASIS,
+      failure: { reason: 'every bucketed row carried a non finite value' },
+    });
+  }
+
+  const ordered = [...byBucket.keys()].sort((a, b) => a - b);
+  let maxGap = 0;
+  for (let i = 1; i < ordered.length; i += 1) {
+    const gap = ordered[i] - ordered[i - 1] - 1;
+    if (gap > maxGap) maxGap = gap;
+  }
+
+  const series = ordered.map((b) => {
+    const s = byBucket.get(b);
+    return {
+      ts: b * width,
+      rows: s.rows,
+      usd: round2(s.usd),
+      longs_usd: round2(s.longs),
+      shorts_usd: round2(s.shorts),
+      other_usd: round2(s.other),
+      by_exchange: Object.fromEntries(
+        Object.entries(s.by_exchange).map(([k, v]) => [k, round2(v)]),
+      ),
+    };
+  });
+
+  const spanBuckets = Math.floor(last / width) - Math.floor(first / width) + 1;
+
+  return measured(
+    {
+      symbol: res.symbol,
+      requested: symbol,
+      bucket: key,
+      coverage_start: first,
+      coverage_end: last,
+      total_usd: round2(totalUsd),
+      rows: countedRows,
+      buckets_returned: series.length,
+      buckets_in_span: spanBuckets,
+      max_gap_buckets: maxGap,
+      exchanges: [...exchanges].sort(),
+      series,
+    },
+    {
+      asOf: now,
+      source: SOURCE,
+      basis: `${BASIS}; the complete recorded history for ${res.symbol} on this tape, bucketed by ${key}`,
+      control: {
+        symbol_resolution: res.matched,
+        coverage_note:
+          'coverage_start is when this tape first observed this symbol, not when the market began trading it',
+        gap_semantics:
+          'the series carries only buckets in which liquidations were observed; an absent bucket means none were seen, and this tape cannot distinguish a quiet market from a collector outage, so read max_gap_buckets before treating absences as zeroes',
+        side_convention:
+          'Sell liquidates a short, Buy liquidates a long; the split is by what was liquidated',
+        reconciliation:
+          'per bucket longs_usd + shorts_usd + other_usd equals usd before rounding; each field is rounded to the cent independently, so a visible sum can differ by up to a cent',
+        unclassified_sides: unknownSides.size ? [...unknownSides] : undefined,
+        exchange_reporting: pickExchangeNotes([...exchanges]),
+        caveat: 'exchange totals are not directly comparable; see exchange_reporting',
+      },
+    },
+  );
+}
+
 export const HANDLERS = Object.freeze({
   liquidation_window: liquidationWindow,
   liquidation_cascade: liquidationCascade,
   liquidation_universe: liquidationUniverse,
   venue_integrity: venueIntegrity,
+  liquidation_history: liquidationHistory,
 });

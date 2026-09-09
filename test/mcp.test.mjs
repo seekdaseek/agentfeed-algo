@@ -46,8 +46,8 @@ test('the catalog works with no key at all, so an operator can look before fundi
     const res = await c.callTool({ name: 'catalog', arguments: {} });
     assert.notEqual(res.isError, true);
     const body = JSON.parse(res.content[0].text);
-    assert.equal(body.routes.length, 4);
-    assert.equal(body.every_route_once_costs, '0.2 USDC');
+    assert.equal(body.routes.length, 5);
+    assert.equal(body.every_route_once_costs, '5.2 USDC');
     assert.ok(body.response_status_vocabulary.unmeasured.includes('never billed'));
     for (const r of body.routes) assert.ok(r.price_usdc && r.unlocks);
   } finally {

@@ -45,7 +45,7 @@ test('the catalog is free, complete, and prices match the compiled ones', async 
     const b = await (await s.get('/catalog')).json();
     const compiled = compileCatalog();
     assert.equal(b.routes.length, compiled.length);
-    assert.equal(b.sweep_price_usdc, '0.2');
+    assert.equal(b.sweep_price_usdc, '5.2');
     assert.equal(b.asset.asaId, s.cfg.usdcAsaId);
     assert.equal(b.payTo, s.cfg.payTo);
     for (const entry of compiled) {

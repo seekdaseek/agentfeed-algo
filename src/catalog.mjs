@@ -65,6 +65,16 @@ export const CATALOG = [
     query: 'hours (1 to 168)',
     input: { hours: '24' },
   },
+  {
+    id: 'liquidation_history',
+    path: '/v1/liquidations/history',
+    price: '5.00',
+    description:
+      'Complete recorded liquidation history for one symbol across binance, bybit and okx, from that symbol first observation to now, bucketed hourly or daily, with the coverage start stated in the payload.',
+    tags: ['derivatives', 'liquidations', 'history', 'dataset'],
+    query: 'symbol, bucket (hour or day)',
+    input: { symbol: 'BTC', bucket: 'hour' },
+  },
 ];
 
 /**

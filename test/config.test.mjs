@@ -77,7 +77,7 @@ test('every problem is reported at once, not one per run', () => {
 test('the shipped catalog compiles and totals what the CLI prints', () => {
   const compiled = compileCatalog();
   assert.equal(compiled.length, CATALOG.length);
-  assert.equal(fromMicroUsdc(sweepPrice(compiled)), '0.2');
+  assert.equal(fromMicroUsdc(sweepPrice(compiled)), '5.2');
   for (const e of compiled) assert.ok(e.micro > 0n);
 });
 
