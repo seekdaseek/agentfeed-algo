@@ -71,5 +71,68 @@ all for a path that settled successfully.
 
 ## Results
 
-Not yet recorded. Both predictions will be checked after the listing payments
-and the outcome written here.
+### Prediction 2, checked 2026-09-16. Half confirmed, half not testable
+
+Three /v2 paths were paid on mainnet on 2026-09-16 at around 11:34 UTC:
+liquidations/cascade, liquidations/universe and venues/integrity. All three
+settled. Reading the GoPlausible discovery listing straight afterwards gives
+this, for every record the Bazaar holds for algo.ochinimus.app:
+
+    path                        accepts extra           settleCount  firstSeen
+    /v1/liquidations/window     feePayer                3            2026-08-05T14:08:58Z
+    /v1/liquidations/cascade    feePayer                1            2026-08-05T14:09:01Z
+    /v1/liquidations/universe   feePayer                1            2026-08-05T14:05:07Z
+    /v1/venues/integrity        feePayer                2            2026-08-05T14:09:03Z
+    /v2/liquidations/cascade    decimals, feePayer, tag 1            2026-09-16T11:34:23Z
+    /v2/liquidations/universe   decimals, feePayer, tag 1            2026-09-16T11:34:37Z
+    /v2/venues/integrity        decimals, feePayer, tag 1            2026-09-16T11:34:53Z
+
+The first claim is confirmed exactly as written. Each new /v2 path created a
+record on its first settlement, and each of those records carries all three of
+feePayer, decimals and tag. The four /v1 records, written on 2026-08-05 before
+the tag existed in accepts extra, still carry feePayer alone after seven
+further settlements between them, which is the write once behaviour this
+prediction rested on, observed rather than assumed.
+
+/v2/liquidations/window and /v2/liquidations/history have no record, because
+neither has been paid yet. That is consistent: a record appears at first
+settlement and not before.
+
+The second claim cannot be tested at this endpoint, and the reason matters more
+than the result. The tag parameter on the discovery endpoint does not filter.
+Asking for tag=x402-global-challenge returns 2024 records. Asking for a tag
+that cannot exist, tag=definitely-not-a-real-tag-zzz9, returns the same 2024
+records. So does asking with no tag parameter at all. The parameter is ignored.
+
+That means the literal wording of the prediction, that the new records would be
+returned by a search filtered on the tag, is technically true and worthless.
+They are returned, but so is everything else, including our own four /v1
+records which demonstrably do not carry the tag. A filter that returns
+everything cannot be evidence that anything passed it.
+
+Other parameter spellings were tried. tags, q, filter, type and extra.tag all
+return the full 2024. search does filter, but it is a text search over the
+record rather than a lookup on accepts extra: search=x402-global-challenge
+returns exactly one record, a different merchant whose description contains
+that string, and not our three records that genuinely carry the tag in the
+place the challenge specifies. search=algo.ochinimus.app returns all seven of
+ours.
+
+So the useful conclusion is narrower than the prediction and more useful than
+it. What we control is confirmed: a fresh resource URL stores the full extra on
+its first settlement, and an old one cannot be repaired. What we assumed about
+discovery is wrong: the public discovery endpoint offers no way to filter on
+accepts extra tag today, so whatever the leaderboard reads, it is not this
+parameter. The premise that a tag filtered search was missing our /v1 records
+does not hold up against this endpoint, because that search is not filtering at
+all.
+
+### Prediction 1, not yet checked
+
+No call has been made for NOTACOIN or any other uncovered symbol, so this one
+stands open and unmodified. One piece of supporting evidence arrived on its
+own: the settlement ledger holds four canceled events, which is the hook that
+fires when x402 cancels a verified payment instead of settling it, so the
+cancel path this prediction depends on has already run in production. That is
+corroboration of the mechanism and not a test of the prediction. The result
+will be written here when the call is made.
