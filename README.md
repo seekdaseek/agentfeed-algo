@@ -8,32 +8,38 @@ Built for the Algorand Foundation Global x402 Challenge.
 
     https://algo.ochinimus.app
 
-    network   algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k
+    network   algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=
     asset     USDC, ASA 31566704
     facilitator  https://facilitator.goplausible.xyz
     catalog   https://algo.ochinimus.app/catalog
     manifest  https://algo.ochinimus.app/.well-known/x402
 
-Free to inspect, paid to read. Call any route without payment and you get a 402 carrying the price, the asset and what the payment unlocks. The tape behind it currently covers around 710 symbols and 50,000 liquidation rows per day across Binance, Bybit and OKX.
+Free to inspect, paid to read. Call any route without payment and you get a 402 whose body carries the route, the price, the asset and what the payment unlocks, with the payment challenge itself base64 in the PAYMENT-REQUIRED header. The tape behind it has recorded close to 900 symbols on Binance, Bybit and OKX since July 8 2026, and it adds around 80,000 liquidation rows a day.
 
 ## What it sells
 
-Four endpoints, priced in USDC, paid per request over x402 with no account, no API key and no signup.
+Five endpoints, priced in USDC, paid per request over x402 with no account, no API key and no signup. They are published under /v2.
+
+The five paths these routes were first published under, the /v1 ones, still answer. Same handlers, same paywall, same prices, each with its own resource URL. An agent holding an old URL is not broken by the move. Nothing advertises /v1 any more, though: the catalog, the manifest, the landing page and the MCP server list only /v2, and nothing new should be built against the old paths.
 
 Liquidation volume for one symbol over a window, split by exchange and by whether longs or shorts were liquidated, at 0.02 USDC.
 A cascade score, which measures whether that volume arrived as a single burst or spread evenly, at 0.05.
 The full symbol universe the tape saw in a window, so a caller can tell coverage from silence, at 0.10.
 Per exchange reporting integrity, at 0.03.
 
-Calling every route once costs 0.2 USDC. That number is computed from the catalog, not typed into the README, so it cannot drift.
+The fifth route sells history. It returns the complete recorded liquidation history for one symbol across all three exchanges, from that symbol's first observation on this tape through to now, bucketed hourly or daily, at 5.00. No other route here looks back further than seven days, and that is the whole difference: a liquidation record cannot be backfilled after the fact, so depth is the part that is genuinely scarce. Coverage is stated per symbol rather than per tape, because a symbol first appears whenever it first liquidated, which can be weeks after the tape itself began, and the payload carries that symbol's own coverage start so our start date is never mistaken for the market's.
+
+Calling every route once costs 5.2 USDC. The live figure is published at /catalog as sweep_price_usdc and is computed from the catalog rather than typed, so if this line ever disagrees with it, the endpoint is right and this file is stale.
 
 ## Global x402 Challenge qualification
 
-Entered as a Composite project: four endpoints under one project sharing a single payTo address.
+Entered as a Composite project: five endpoints under one payTo address.
 
-Every route carries the required `x402-global-challenge` tag and declares a Bazaar discovery extension, so an agent that has never heard of this service can find it, read what each route costs, and construct a valid request from the listing alone. Both are applied in `compileCatalog` and `buildRoutes` rather than written per route, so neither can be forgotten on one endpoint, and there are tests asserting all four carry them.
+Every route carries the required `x402-global-challenge` tag and declares a Bazaar discovery extension, so an agent that has never heard of this service can find it, read what each route costs, and construct a valid request from the listing alone. Both are applied in `compileCatalog` and `buildRoutes` rather than written per route, so neither can be forgotten on one endpoint, and the tests that check them iterate over every route the service answers on rather than sampling one, so a route that lost either would fail the suite.
 
-Settlement runs through the GoPlausible facilitator on Algorand mainnet. Two payments have completed end to end.
+The tag rides in `accepts[].extra`, which is where the leaderboard reads it, not in `resource.tags`. It travels there alongside the asset decimals and the feePayer the facilitator advertises, because `ExactAvmScheme` merges that extra rather than replacing it.
+
+Settlement runs through the GoPlausible facilitator on Algorand mainnet, and payments have completed end to end. The current count, the distinct payers behind it and the settled total are whatever the ledger says rather than whatever this file says, so read them with `agentfeed-algo ledger` instead of trusting a number typed here.
 
 ## Use it from an agent
 
@@ -43,7 +49,7 @@ The endpoint is a URL, which is invisible to the thing meant to pay for it. So t
 
 Or in an MCP client config, as a server named agentfeed-algo running `npx -y @seekdaseek/agentfeed-algo` with the binary `agentfeed-algo-mcp`, and one environment variable, `ALGO_PAYER_MNEMONIC`, holding the mnemonic for an Algorand account that has USDC and is opted in to asset 31566704.
 
-Six tools. Four paid, one per route. Two free: `catalog` lists everything sold and what it costs, and `payer_status` reports your balances and anything blocking payment. Both work with no key at all, so you can install this, look at what exists, and decide afterwards whether to fund anything.
+Six tools. Four are paid, one for each of the short window routes. Two are free: `catalog` lists everything sold and what it costs, and `payer_status` reports your balances and anything blocking payment. Both work with no key at all, so you can install this, look at what exists, and decide afterwards whether to fund anything. The history route is listed by the `catalog` tool, with its price and its path, but it has no tool of its own.
 
 Payment comes from your own account. There is no key of ours in the loop and no account to create.
 
@@ -109,7 +115,7 @@ So every verify and every settle, successful or not, is appended to a local ledg
 node bin/agentfeed-algo.mjs ledger
 ```
 
-One honest note about the hooks that feed it. The exact shape of the context object x402 hands to onAfterSettle is not something I have observed against a live facilitator yet. Rather than assert a shape I have not seen, the extractor tries the plausible field paths, and when it cannot find a payer it records the context's top level keys instead of writing a null. The first real settlement therefore teaches us the shape, in the ledger, where somebody will read it.
+One note about the hooks that feed it. The shape of the context object x402 hands to onAfterSettle was not something I had observed when this was written, so rather than assert a shape I had not seen, the extractor tries the plausible field paths, and when it cannot find a payer it records the context's top level keys instead of writing a null. The first real settlement, on 2026-08-05, taught us the shape in the ledger where somebody would read it: the context carries paymentPayload, requirements, declaredExtensions, transportContext and result, with the payer and the transaction id under result. The extractor still tries the other paths, because that costs nothing and the shape is upstream's to change.
 
 ## Architecture
 
@@ -126,6 +132,8 @@ npm test
 ```
 
 No network, no wall clock, no sleeps. The end to end suites start the real Express app on an ephemeral port and drive it over real HTTP, including with the paywall engaged, so the 402 path is proven rather than assumed.
+
+The route tests go through HTTP as well, and that is not decoration. A handler level test cannot see a query parameter the server never passes, and one that was never passed is exactly how the history route came to ignore its bucket parameter: the handler validated bucket and defaulted it to hourly, its own tests passed, and the server was calling it without the parameter at all. So bucket=day was quietly answered hourly, and an invalid bucket was answered hourly and billed, when the handler would have refused it as unmeasured and charged nothing. The seam between the router and the handler is where that lived, so that is where the tests for it sit now.
 
 ## Symbols are exchange pairs, and a coverage gap is not a quiet market
 
@@ -145,11 +153,15 @@ The preflight compares the two forms and reports a false negative that reads as 
 
 Worse, @x402/core does the same plain string comparison inside its own capability check. Every paid route then fails to build a payment challenge and the service answers 503 instead of 402. In production that means nobody can pay you and the endpoint is inert. The error reads: Facilitator does not support scheme exact on network algorand followed by the truncated identifier.
 
-The fix is not to configure the long form. That would satisfy the string comparison and break asset resolution instead, because USDC_CONFIG in @x402/avm has no key for the untruncated identifier.
+The first fix here was to normalise at the boundary, wrapping the facilitator client so that getSupported returned truncated identifiers before core ever saw them. That satisfied the capability check and then failed one step later, at verify time, because the facilitator validates a payment against the identifier it advertises, which is the untruncated one. A challenge built on the truncated form comes back as Network not supported, after the caller has already signed. That is a worse place to fail than startup.
 
-What makes this an upstream bug rather than a configuration mistake is that @x402/avm already knows how to reconcile the two. normalizeAlgorandNetwork accepts either form and returns the canonical one, isAlgorandNetwork accepts both, and getNetworkFromCaip2 resolves both to testnet or mainnet correctly. The mechanism package handles it. The core capability check simply never asks.
+So the config carries the untruncated identifier, the one the facilitator itself validates against, and nothing on the payment path rewrites it.
 
-So this service normalises at the facilitator boundary, wrapping the client so that getSupported returns canonical identifiers before core ever sees them, using the library's own normaliser rather than a hand rolled one. verify and settle pass through untouched. There is a test that reproduces the exact failure with the facilitator's real payload shape and asserts a 402 comes back rather than a 503, so the day core fixes this upstream, the tests will still pass and the wrapper can be deleted.
+The objection to doing that is asset resolution, because USDC_CONFIG in @x402/avm has no key for the untruncated identifier. It does not bite here, because the price is never handed over as a decimal to be resolved against a network keyed table. It is passed as an asset amount carrying the ASA id explicitly, and parsePrice in @x402/avm returns that amount and asset untouched rather than consulting USDC_CONFIG at all. The lookup that would have broken is never reached.
+
+What makes this an upstream bug rather than a configuration mistake is that @x402/avm already knows how to reconcile the two forms. normalizeAlgorandNetwork accepts either and returns the canonical one, isAlgorandNetwork accepts both, and getNetworkFromCaip2 resolves both to testnet or mainnet correctly. The mechanism package handles it. The core capability check simply never asks.
+
+The normaliser is still in the tree and still tested, because the preflight compares defensively and because the day core reconciles the two forms upstream, the tests should say so rather than go quiet. There is a test that replays the facilitator's real payload shape and asserts a 402 comes back rather than a 503.
 
 If you are building on Algorand x402 and your paid routes answer 503, this is why.
 
@@ -157,9 +169,11 @@ If you are building on Algorand x402 and your paid routes answer 503, this is wh
 
 The ledger writes from the resource server's verify and settle hooks. A request that fails before verification is reached, such as a malformed payment header, produces no ledger line at all. The facilitator and the chain remain the authoritative record; this file is our copy of it, and it is complete only for payments that got as far as being checked.
 
+There is a second gap, and it is ours rather than upstream's. Every entry written so far carries a null routeId and a null path, so the ledger can say who paid, how much, and with which transaction, but not which route they bought. The extractor looks for the resource URL under requirements.resource and the other plausible keys, and on the live contexts it has not found one. Payer concentration, which is the question the ledger exists to answer, is unaffected. Per route revenue is not available from this file today.
+
 ## Limitations
 
-The tape reader expects a liquidations table with symbol, venue, ts in milliseconds and usd columns. If your schema differs, the store is the only thing that has to change.
+The tape reader expects a liquidations table with symbol, exchange, side, ts in milliseconds and usd columns. The column is exchange rather than venue, and symbols are exchange pairs such as SOLUSDT rather than bare tickers. If your schema differs, the store is the only thing that has to change.
 
 The ledger is a local file. It is our copy of the truth, not the truth, which lives with the facilitator and on chain.
 
