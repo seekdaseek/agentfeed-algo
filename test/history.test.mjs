@@ -1,33 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
 import { liquidationHistory } from '../src/tape.mjs';
+import { sqliteFixtureStore as makeStore } from './helpers.mjs';
 
 const H = 3_600_000;
 const T0 = 1_780_000_000_000; // an exact multiple of an hour is not assumed
-
-/** The production schema, verbatim. */
-function makeStore(rows) {
-  const db = new DatabaseSync(':memory:');
-  db.exec(`CREATE TABLE liquidations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts INTEGER NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL,
-    size REAL NOT NULL, price REAL NOT NULL, usd REAL NOT NULL,
-    exchange TEXT NOT NULL DEFAULT 'bybit')`);
-  const ins = db.prepare(
-    'INSERT INTO liquidations (ts,symbol,side,size,price,usd,exchange) VALUES (?,?,?,?,?,?,?)',
-  );
-  for (const r of rows) ins.run(r.ts, r.symbol, r.side, 1, 1, r.usd, r.exchange ?? 'bybit');
-  return {
-    query(sql, params = []) {
-      try {
-        return { rows: db.prepare(sql).all(...params), failure: null };
-      } catch (err) {
-        return { rows: null, failure: `tape query failed: ${err.message}` };
-      }
-    },
-  };
-}
 
 const brokenStore = { query: () => ({ rows: null, failure: 'tape unavailable: disk gone' }) };
 

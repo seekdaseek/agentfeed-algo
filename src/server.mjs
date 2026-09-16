@@ -161,13 +161,23 @@ export function createApp(cfg, {
     if (!handler) {
       throw new Error(`catalog entry "${entry.id}" has no handler; the catalog and code disagree`);
     }
-    app.get(entry.path, (req, res) => {
+
+    const serve = (req, res) => {
       let env;
       try {
         env = handler(store, {
           symbol: req.query.symbol,
           hours: req.query.hours ?? undefined,
           minutes: req.query.minutes ?? undefined,
+          // bucket was missing here for the whole life of the history route.
+          // The handler has its own default, so a request never failed loudly:
+          // bucket=day was silently answered hourly, and an invalid bucket was
+          // answered hourly and BILLED, when the handler would have returned
+          // unmeasured and cost the caller nothing. A parameter the server
+          // does not forward is a parameter the handler cannot validate, and
+          // billing for a validation that never ran is the one thing this
+          // service claims it does not do.
+          bucket: req.query.bucket ?? undefined,
           now: now(),
         });
       } catch (err) {
@@ -196,7 +206,14 @@ export function createApp(cfg, {
         return;
       }
       res.json(body);
-    });
+    };
+
+    // The legacy path is served by the same function, not by a redirect. An
+    // agent that already paid a 402 challenge for the old URL must get the data
+    // at that URL; a 301 would hand it a challenge it has no reason to expect.
+    for (const path of [entry.path, entry.legacyPath].filter(Boolean)) {
+      app.get(path, serve);
+    }
   }
 
   app.use((_req, res) => res.status(404).json({ error: 'not_found' }));

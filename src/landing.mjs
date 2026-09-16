@@ -330,7 +330,7 @@ ${rows}
       <button class="copy" id="cp" type="button">copy</button>
       <code id="cmd">${esc(curl)}</code>
     </div>
-    <p class="side">A 402 comes back with the payment challenge in a base64 <code>PAYMENT-REQUIRED</code> header, not in the body, which is empty. Any x402 client on Algorand settles it. The facilitator sponsors the gas, so a caller spends USDC and nothing else.</p>
+    <p class="side">A 402 comes back carrying the route, its price, the asset and what the payment unlocks in the body, while the payment challenge itself is base64 in the <code>PAYMENT-REQUIRED</code> header. Any x402 client on Algorand settles it. The facilitator sponsors the gas, so a caller spends USDC and nothing else.</p>
   </div>
 
   <h2>Every answer says what it is</h2>

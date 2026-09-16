@@ -23,7 +23,7 @@ import { isAlgorandNetwork, normalizeAlgorandNetwork } from '@x402/avm';
 import { declareDiscoveryExtension } from '@x402/extensions';
 import { CHALLENGE_TAG } from './catalog.mjs';
 import { EVENT } from './ledger.mjs';
-import { priceFor } from './money.mjs';
+import { priceFor, USDC_DECIMALS } from './money.mjs';
 
 export const SCHEME = 'exact';
 export const DEFAULT_MAX_TIMEOUT_SECONDS = 60;
@@ -95,58 +95,80 @@ export function normalizeNetwork(network) {
 /**
  * Derive the x402 RoutesConfig from the compiled catalog.
  * Nothing about pricing or description is written twice.
+ *
+ * Each entry yields one route config per path it answers on: the current one,
+ * and the legacy one it was first published under. They are identical except
+ * for `resource`, which has to be the URL actually being called, because that
+ * URL is the key the Bazaar writes a record against and the string the ledger
+ * recovers the route from.
  */
 export function buildRoutes(compiled, cfg) {
   const routes = {};
   for (const entry of compiled) {
-    routes[entry.path] = {
-      accepts: [
-        {
-          scheme: SCHEME,
-          network: cfg.caip2,
-          payTo: cfg.payTo,
-          price: priceFor(entry.micro, cfg.usdcAsaId),
-          maxTimeoutSeconds: DEFAULT_MAX_TIMEOUT_SECONDS,
-          // Global x402 Challenge attribution. The leaderboard filters on
-          // accepts[].extra.tag, NOT resource.tags. Confirmed by the Algorand
-          // Foundation 2026-08-11; settlements before this were not counted.
-          // resource.tags stays as it is, for Bazaar discovery.
-          extra: { tag: CHALLENGE_TAG },
-        },
-      ],
-      resource: `${cfg.baseUrl}${entry.path}`,
-      description: entry.description,
-      mimeType: 'application/json',
-      serviceName: 'AgentFeed',
-      tags: [...entry.tags],
-      // Bazaar discovery. The Global x402 Challenge requires entered endpoints
-      // to be discoverable, and discovery is what makes an endpoint findable by
-      // an agent that has never heard of it. Each route declares its HTTP
-      // method and the query parameters it takes, so a caller can construct a
-      // valid request from the listing alone rather than reading these docs.
-      extensions: declareDiscoveryExtension({
-        method: 'GET',
-        input: entry.input ?? {},
-      }),
-      // What a caller sees before paying. Enough to decide, not enough to skip
-      // paying, and it names the status vocabulary so the paid response is
-      // legible the first time.
-      unpaidResponseBody: () => ({
-        contentType: 'application/json',
-        body: {
-          route: entry.id,
-          price_usdc: entry.price,
-          network: cfg.caip2,
-          asset: cfg.usdcAsaId,
-          unlocks: entry.description,
-          query: entry.query ?? null,
-          response_status_vocabulary: ['measured', 'absent', 'unmeasured'],
-          note: 'unmeasured responses are never billed',
-        },
-      }),
-    };
+    routes[entry.path] = routeConfig(entry, cfg, entry.path);
+    if (entry.legacyPath) {
+      routes[entry.legacyPath] = routeConfig(entry, cfg, entry.legacyPath);
+    }
   }
   return routes;
+}
+
+function routeConfig(entry, cfg, path) {
+  return {
+    accepts: [
+      {
+        scheme: SCHEME,
+        network: cfg.caip2,
+        payTo: cfg.payTo,
+        price: priceFor(entry.micro, cfg.usdcAsaId),
+        maxTimeoutSeconds: DEFAULT_MAX_TIMEOUT_SECONDS,
+        // Global x402 Challenge attribution. The leaderboard filters on
+        // accepts[].extra.tag, NOT resource.tags. Confirmed by the Algorand
+        // Foundation 2026-08-11; settlements before this were not counted.
+        // resource.tags stays as it is, for Bazaar discovery.
+        //
+        // decimals rides along because a Bazaar record is written once, at the
+        // first settlement on a resource URL, and is never re-read afterwards.
+        // Whatever extra carries at that moment is what the listing carries
+        // forever, so the asset's precision goes in now rather than in a later
+        // edit that would never be picked up. It is read from the asset
+        // constant, not typed here, so it cannot disagree with the prices.
+        // ExactAvmScheme merges extra rather than replacing it, so the
+        // facilitator's feePayer arrives alongside these two.
+        extra: { tag: CHALLENGE_TAG, decimals: USDC_DECIMALS },
+      },
+    ],
+    resource: `${cfg.baseUrl}${path}`,
+    description: entry.description,
+    mimeType: 'application/json',
+    serviceName: 'AgentFeed',
+    tags: [...entry.tags],
+    // Bazaar discovery. The Global x402 Challenge requires entered endpoints
+    // to be discoverable, and discovery is what makes an endpoint findable by
+    // an agent that has never heard of it. Each route declares its HTTP
+    // method and the query parameters it takes, so a caller can construct a
+    // valid request from the listing alone rather than reading these docs.
+    extensions: declareDiscoveryExtension({
+      method: 'GET',
+      input: entry.input ?? {},
+    }),
+    // What a caller sees before paying. Enough to decide, not enough to skip
+    // paying, and it names the status vocabulary so the paid response is
+    // legible the first time.
+    unpaidResponseBody: () => ({
+      contentType: 'application/json',
+      body: {
+        route: entry.id,
+        price_usdc: entry.price,
+        network: cfg.caip2,
+        asset: cfg.usdcAsaId,
+        unlocks: entry.description,
+        query: entry.query ?? null,
+        response_status_vocabulary: ['measured', 'absent', 'unmeasured'],
+        note: 'unmeasured responses are never billed',
+      },
+    }),
+  };
 }
 
 /**
@@ -183,7 +205,10 @@ export function extractSettlement(ctx) {
 export function routeIdForPath(compiled, path) {
   if (typeof path !== 'string') return null;
   const clean = path.split('?')[0];
-  return compiled.find((e) => e.path === clean)?.id ?? null;
+  // A legacy path resolves to the same product. Without this every settlement
+  // arriving on an old URL would land in the ledger with a null routeId, which
+  // is the quiet kind of gap this ledger exists to avoid.
+  return compiled.find((e) => e.path === clean || e.legacyPath === clean)?.id ?? null;
 }
 
 /**

@@ -17,6 +17,7 @@ import { toMicroUsdc } from './money.mjs';
  * @typedef {object} CatalogEntry
  * @property {string} id            stable identifier, used in the ledger
  * @property {string} path          express path, must start with /
+ * @property {string} [legacyPath]  a previously published path that still answers
  * @property {string} price         human readable USDC price
  * @property {string} description   what the payment unlocks, in one sentence
  * @property {string[]} tags        discovery tags
@@ -27,7 +28,8 @@ import { toMicroUsdc } from './money.mjs';
 export const CATALOG = [
   {
     id: 'liquidation_window',
-    path: '/v1/liquidations/window',
+    path: '/v2/liquidations/window',
+    legacyPath: '/v1/liquidations/window',
     price: '0.02',
     description:
       'Forced liquidation volume for one symbol over a recent window, split by exchange and by whether longs or shorts were liquidated.',
@@ -37,7 +39,8 @@ export const CATALOG = [
   },
   {
     id: 'liquidation_cascade',
-    path: '/v1/liquidations/cascade',
+    path: '/v2/liquidations/cascade',
+    legacyPath: '/v1/liquidations/cascade',
     price: '0.05',
     description:
       'Cascade score for one symbol: whether current liquidation volume is clustered rather than spread, with the observation window it was computed over.',
@@ -47,7 +50,8 @@ export const CATALOG = [
   },
   {
     id: 'liquidation_universe',
-    path: '/v1/liquidations/universe',
+    path: '/v2/liquidations/universe',
+    legacyPath: '/v1/liquidations/universe',
     price: '0.10',
     description:
       'Every symbol seen on the tape in a window, with row counts, so a caller can tell coverage from silence.',
@@ -57,7 +61,8 @@ export const CATALOG = [
   },
   {
     id: 'venue_integrity',
-    path: '/v1/venues/integrity',
+    path: '/v2/venues/integrity',
+    legacyPath: '/v1/venues/integrity',
     price: '0.03',
     description:
       'Per exchange reporting integrity for the window: row counts, distinct symbols, and which exchanges undercount by design.',
@@ -67,7 +72,8 @@ export const CATALOG = [
   },
   {
     id: 'liquidation_history',
-    path: '/v1/liquidations/history',
+    path: '/v2/liquidations/history',
+    legacyPath: '/v1/liquidations/history',
     price: '5.00',
     description:
       'Complete recorded liquidation history for one symbol across binance, bybit and okx, from that symbol first observation to now, bucketed hourly or daily, with the coverage start stated in the payload.',
@@ -123,6 +129,26 @@ export function compileCatalog(catalog = CATALOG) {
       throw new CatalogError(`catalog path "${entry.path}" collides with a free route`);
     }
     seenPaths.add(entry.path);
+
+    // A legacy path is a path we already published and agents may still hold.
+    // It answers the same handler behind the same paywall, so it has to clear
+    // exactly the same checks as the current one: nothing may collide with a
+    // free route, and no path may be claimed twice across either namespace.
+    if (entry.legacyPath !== undefined) {
+      if (typeof entry.legacyPath !== 'string' || !entry.legacyPath.startsWith('/')) {
+        throw new CatalogError(`catalog entry "${entry.id}" has a legacyPath that is not a path`);
+      }
+      if (entry.legacyPath === entry.path) {
+        throw new CatalogError(`catalog entry "${entry.id}" lists its own path as a legacy alias`);
+      }
+      if (seenPaths.has(entry.legacyPath)) {
+        throw new CatalogError(`duplicate catalog path "${entry.legacyPath}"`);
+      }
+      if (FREE_ROUTES.includes(entry.legacyPath)) {
+        throw new CatalogError(`catalog path "${entry.legacyPath}" collides with a free route`);
+      }
+      seenPaths.add(entry.legacyPath);
+    }
 
     let micro;
     try {

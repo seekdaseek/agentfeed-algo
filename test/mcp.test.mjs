@@ -50,6 +50,12 @@ test('the catalog works with no key at all, so an operator can look before fundi
     assert.equal(body.every_route_once_costs, '5.2 USDC');
     assert.ok(body.response_status_vocabulary.unmeasured.includes('never billed'));
     for (const r of body.routes) assert.ok(r.price_usdc && r.unlocks);
+    // The MCP server is what an agent actually reads, so it must not send one
+    // to a legacy path. Those still answer, but they are not what is sold now.
+    for (const r of body.routes) {
+      assert.match(r.path, /^\/v2\//, `the MCP catalog advertises ${r.path}`);
+    }
+    assert.equal(JSON.stringify(body).includes('/v1/'), false, 'the MCP catalog leaks a legacy path');
   } finally {
     await c.close();
   }

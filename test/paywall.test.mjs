@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { createApp } from '../src/server.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { Ledger } from '../src/ledger.mjs';
-import { CATALOG } from '../src/catalog.mjs';
+import { CATALOG, CHALLENGE_TAG, compileCatalog } from '../src/catalog.mjs';
+import { USDC_DECIMALS } from '../src/money.mjs';
 import { FakeTapeStore, rows, NOW, baseEnv } from './helpers.mjs';
 
 /**
@@ -14,6 +15,22 @@ import { FakeTapeStore, rows, NOW, baseEnv } from './helpers.mjs';
  * and getSupported. Nothing here is guessed; the shapes come from the package's
  * own type definitions.
  */
+const FEE_PAYER = 'ZMFK2OI7ZBD2U27ISERZC4S6LKM6WMFJPZQ4MYNJDZ2VNBNMBA67RA22AA';
+
+/**
+ * Decode the payment challenge.
+ *
+ * It rides base64 in the PAYMENT-REQUIRED response header, not in the body. The
+ * body is the human and agent readable preview of what is for sale; the header
+ * is the machine readable thing a client signs against. Anything asserting on
+ * what we charge has to read the header, because that is what the payer reads.
+ */
+function challengeFrom(res) {
+  const header = res.headers.get('payment-required');
+  assert.ok(header, 'a 402 with no PAYMENT-REQUIRED header is a challenge no client can answer');
+  return JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
+}
+
 class FakeFacilitator {
   constructor(caip2, { supported = true } = {}) {
     this.caip2 = caip2;
@@ -23,8 +40,20 @@ class FakeFacilitator {
 
   async getSupported() {
     this.calls.getSupported += 1;
+    // The live GoPlausible facilitator advertises a feePayer alongside each
+    // Algorand kind, and that feePayer is what ends up merged into accepts.extra.
+    // Advertising one here is what makes the merge observable in a test.
     return this.supported
-      ? { kinds: [{ x402Version: 2, scheme: 'exact', network: this.caip2 }] }
+      ? {
+          kinds: [
+            {
+              x402Version: 2,
+              scheme: 'exact',
+              network: this.caip2,
+              extra: { feePayer: FEE_PAYER },
+            },
+          ],
+        }
       : { kinds: [] };
   }
 
@@ -65,7 +94,7 @@ async function serveWithPaywall(opts = {}) {
 test('with the paywall on, a paid route without payment returns 402', async () => {
   const s = await serveWithPaywall();
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=SOL&hours=1');
+    const res = await s.get('/v2/liquidations/window?symbol=SOL&hours=1');
     assert.equal(res.status, 402, 'the middleware must challenge, not serve');
   } finally {
     await s.close();
@@ -75,7 +104,7 @@ test('with the paywall on, a paid route without payment returns 402', async () =
 test('the 402 body tells an agent the price, the asset and what it unlocks', async () => {
   const s = await serveWithPaywall();
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=SOL&hours=1');
+    const res = await s.get('/v2/liquidations/window?symbol=SOL&hours=1');
     const text = await res.text();
     assert.match(text, /0\.02/, 'the price must be visible before paying');
     assert.match(text, new RegExp(s.cfg.usdcAsaId), 'the asset id must be visible');
@@ -88,7 +117,7 @@ test('the 402 body tells an agent the price, the asset and what it unlocks', asy
 test('the paid value never leaks through the 402', async () => {
   const s = await serveWithPaywall();
   try {
-    const text = await (await s.get('/v1/liquidations/window?symbol=SOL&hours=1')).text();
+    const text = await (await s.get('/v2/liquidations/window?symbol=SOL&hours=1')).text();
     assert.equal(/3500/.test(text), false, 'the unpaid response must not contain the measured total');
   } finally {
     await s.close();
@@ -121,7 +150,7 @@ test('every paid route in the catalog is actually behind the paywall', async () 
 test('a garbage payment header is rejected rather than accepted', async () => {
   const s = await serveWithPaywall();
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=SOL&hours=1', {
+    const res = await s.get('/v2/liquidations/window?symbol=SOL&hours=1', {
       'X-PAYMENT': 'not-a-real-payment',
     });
     assert.notEqual(res.status, 200, 'an invalid payment must never serve the data');
@@ -161,7 +190,7 @@ async function serveWithDeadFacilitator(syncFacilitatorOnStart = true) {
 test('a facilitator outage is 503 with Retry-After, never a bare 500', async () => {
   const s = await serveWithDeadFacilitator();
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=SOL&hours=1');
+    const res = await s.get('/v2/liquidations/window?symbol=SOL&hours=1');
     assert.equal(res.status, 503, 'an outage on our payment rail is not a 500');
     assert.equal(res.headers.get('retry-after'), '30');
     const b = await res.json();
@@ -176,7 +205,7 @@ test('a facilitator outage is 503 with Retry-After, never a bare 500', async () 
 test('the outage answer is the same whether or not the boot time sync ran', async () => {
   const s = await serveWithDeadFacilitator(false);
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=SOL&hours=1');
+    const res = await s.get('/v2/liquidations/window?symbol=SOL&hours=1');
     assert.equal(res.status, 503);
     assert.equal((await res.json()).error, 'payment_unavailable');
   } finally {
@@ -200,7 +229,7 @@ test('during an outage the free surfaces still work, so the service stays discov
 test('an outage never leaks the paid value', async () => {
   const s = await serveWithDeadFacilitator();
   try {
-    const text = await (await s.get('/v1/liquidations/window?symbol=SOL&hours=1')).text();
+    const text = await (await s.get('/v2/liquidations/window?symbol=SOL&hours=1')).text();
     assert.equal(/3500/.test(text), false);
   } finally {
     await s.close();
@@ -251,7 +280,7 @@ test('the untruncated facilitator identifier still yields 402, not 503', async (
   });
   const { port } = server.address();
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/v1/liquidations/window?symbol=SOL&hours=1`, {
+    const res = await fetch(`http://127.0.0.1:${port}/v2/liquidations/window?symbol=SOL&hours=1`, {
       headers: { accept: 'application/json' },
     });
     assert.equal(
@@ -307,4 +336,83 @@ test('verify and settle pass straight through the wrapper', async () => {
   assert.deepEqual(await wrapped.verify('p', 'r'), { isValid: true });
   assert.deepEqual(await wrapped.settle('p', 'r'), { success: true });
   assert.deepEqual(seen.map((s) => s[0]), ['verify', 'settle']);
+});
+
+/**
+ * What accepts.extra carries at the moment of first settlement is what the
+ * Bazaar record carries forever: a record is written once, on the first
+ * settlement against a resource URL, and its accepts are never re-read. Our
+ * original four routes were first paid before the tag was set, so they are
+ * listed with feePayer alone and a tag filtered search does not find them. That
+ * is the whole reason the routes moved to fresh /v2 URLs, and it is why this
+ * asserts the exact key set rather than merely that the tag is present.
+ */
+test('the 402 challenge carries exactly the tag, the decimals and the feePayer', async () => {
+  const s = await serveWithPaywall();
+  try {
+    for (const path of ['/v2/liquidations/window', '/v1/liquidations/window']) {
+      const res = await s.get(`${path}?symbol=SOL&hours=1`);
+      assert.equal(res.status, 402, `${path} did not challenge`);
+
+      const challenge = challengeFrom(res);
+      assert.equal(challenge.accepts.length, 1, `${path} offered more than one payment option`);
+      const { extra } = challenge.accepts[0];
+
+      assert.deepEqual(
+        Object.keys(extra).sort(),
+        ['decimals', 'feePayer', 'tag'],
+        `${path} extra is not exactly the tag, the decimals and the feePayer`,
+      );
+      assert.equal(extra.tag, CHALLENGE_TAG, `${path} would not be attributed on the leaderboard`);
+      assert.equal(extra.decimals, USDC_DECIMALS, `${path} states the wrong asset precision`);
+      assert.equal(
+        extra.feePayer,
+        FEE_PAYER,
+        `${path} lost the facilitator feePayer, so ExactAvmScheme replaced extra instead of merging it`,
+      );
+
+      // The resource URL is the key a Bazaar record is written against, so the
+      // legacy alias has to advertise its own URL rather than its replacement's.
+      assert.equal(challenge.resource.url, `${s.cfg.baseUrl}${path}`);
+    }
+  } finally {
+    await s.close();
+  }
+});
+
+test('the decimals in the challenge come from the asset, not from a number typed twice', async () => {
+  const s = await serveWithPaywall();
+  try {
+    const challenge = challengeFrom(await s.get('/v2/liquidations/window?symbol=SOL&hours=1'));
+    const { amount, extra } = challenge.accepts[0];
+    // 0.02 USDC at six decimals is 20000 base units. If the stated precision and
+    // the charged amount ever disagree, a client converts the price wrongly.
+    assert.equal(amount, '20000');
+    assert.equal(BigInt(amount) * 10n ** BigInt(6 - extra.decimals), 20000n);
+  } finally {
+    await s.close();
+  }
+});
+
+test('every paid path, current and legacy, answers 402 without payment', async () => {
+  const s = await serveWithPaywall();
+  try {
+    const paths = [];
+    for (const entry of compileCatalog()) {
+      paths.push(entry.path);
+      assert.ok(entry.legacyPath, `${entry.id} has no legacy alias to cover`);
+      paths.push(entry.legacyPath);
+    }
+    assert.equal(paths.length, 10, 'five routes on two namespaces is ten paid paths');
+
+    for (const path of paths) {
+      const res = await s.get(`${path}?symbol=SOL&hours=1&bucket=hour`);
+      assert.equal(res.status, 402, `${path} served without payment, which is a leak`);
+      const text = await res.text();
+      assert.equal(/3500/.test(text), false, `${path} leaked a measured value in its 402`);
+      assert.equal(/"series"/.test(text), false, `${path} leaked a history series in its 402`);
+    }
+  } finally {
+    await s.close();
+  }
 });

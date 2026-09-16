@@ -6,7 +6,7 @@ import { loadConfig } from '../src/config.mjs';
 import { Ledger } from '../src/ledger.mjs';
 import { compileCatalog, CATALOG } from '../src/catalog.mjs';
 import { TITLE, tapeSnapshot, resetTapeCache } from '../src/landing.mjs';
-import { FakeTapeStore, rows, NOW, baseEnv } from './helpers.mjs';
+import { FakeTapeStore, sqliteFixtureStore, rows, NOW, baseEnv } from './helpers.mjs';
 import { MissingTapeStore } from '../src/tape.mjs';
 
 /** Boot the app on an ephemeral port and hand back a fetch bound to it. */
@@ -78,7 +78,7 @@ test('the well known manifest lists every resource with base unit prices', async
 test('a measured answer is served with its basis and control attached', async () => {
   const s = await serve({ withPaywall: false, store: new FakeTapeStore(rows()) });
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=SOL&hours=1');
+    const res = await s.get('/v2/liquidations/window?symbol=SOL&hours=1');
     assert.equal(res.status, 200);
     const b = await res.json();
     assert.equal(b.status, 'measured');
@@ -102,7 +102,7 @@ test('an absent answer is a paid 200, because a quiet market is a real finding',
   ]);
   const s = await serve({ withPaywall: false, store: quiet });
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=ETHUSDT&hours=1');
+    const res = await s.get('/v2/liquidations/window?symbol=ETHUSDT&hours=1');
     assert.equal(res.status, 200);
     const b = await res.json();
     assert.equal(b.status, 'absent');
@@ -115,7 +115,7 @@ test('an absent answer is a paid 200, because a quiet market is a real finding',
 test('a symbol the tape does not carry is 503 and not billed, never a quiet market', async () => {
   const s = await serve({ withPaywall: false, store: new FakeTapeStore(rows()) });
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=DOGE&hours=1');
+    const res = await s.get('/v2/liquidations/window?symbol=DOGE&hours=1');
     assert.equal(res.status, 503, 'a coverage gap must not be sold as a finding');
     const b = await res.json();
     assert.equal(b.status, 'unmeasured');
@@ -129,7 +129,7 @@ test('a symbol the tape does not carry is 503 and not billed, never a quiet mark
 test('an unmeasured answer is 503 and says the caller was not charged', async () => {
   const s = await serve({ withPaywall: false, store: new FakeTapeStore(rows()).failWith('disk gone') });
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=SOL&hours=1');
+    const res = await s.get('/v2/liquidations/window?symbol=SOL&hours=1');
     assert.equal(res.status, 503);
     const b = await res.json();
     assert.equal(b.status, 'unmeasured');
@@ -156,7 +156,7 @@ test('no tape means every paid route is 503, not a page of confident zeros', asy
 test('a malformed parameter is unmeasured rather than a silent default', async () => {
   const s = await serve({ withPaywall: false, store: new FakeTapeStore(rows()) });
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=SOL&hours=9999');
+    const res = await s.get('/v2/liquidations/window?symbol=SOL&hours=9999');
     assert.equal(res.status, 503);
     assert.match((await res.json()).basis, /hours must be between 1 and 168/);
   } finally {
@@ -172,7 +172,7 @@ test('a handler that throws returns unmeasured, never a fabricated body', async 
   };
   const s = await serve({ withPaywall: false, store: exploding });
   try {
-    const res = await s.get('/v1/liquidations/window?symbol=SOL&hours=1');
+    const res = await s.get('/v2/liquidations/window?symbol=SOL&hours=1');
     assert.equal(res.status, 503);
     const b = await res.json();
     assert.equal(b.status, 'unmeasured');
@@ -185,6 +185,8 @@ test('a handler that throws returns unmeasured, never a fabricated body', async 
 test('an unknown path is a clean 404', async () => {
   const s = await serve({ withPaywall: false });
   try {
+    assert.equal((await s.get('/v2/nope')).status, 404);
+    // The legacy namespace is a fixed list of aliases, not a wildcard.
     assert.equal((await s.get('/v1/nope')).status, 404);
   } finally {
     await s.close();
@@ -194,7 +196,7 @@ test('an unknown path is a clean 404', async () => {
 test('the app refuses to build if the catalog names a handler that does not exist', () => {
   const cfg = loadConfig(baseEnv());
   assert.throws(
-    () => createApp(cfg, { withPaywall: false, catalog: [{ ...CATALOG[0], id: 'ghost_route', path: '/v1/ghost' }] }),
+    () => createApp(cfg, { withPaywall: false, catalog: [{ ...CATALOG[0], id: 'ghost_route', path: '/v2/ghost', legacyPath: '/v1/ghost' }] }),
     /has no handler; the catalog and code disagree/,
   );
 });
@@ -287,6 +289,132 @@ test('the catalog stays reachable at its own path now that the root is a page', 
   try {
     const body = await (await fetch(`${s.base}/catalog`)).json();
     assert.ok(Array.isArray(body.routes) && body.routes.length > 0);
+  } finally {
+    await s.close();
+  }
+});
+
+/**
+ * The history route, driven over HTTP rather than through the handler.
+ *
+ * These exist because of a bug no handler level test could have caught. The
+ * handler had always validated `bucket` and had always defaulted it to 'hour',
+ * and its own tests passed. The server simply never forwarded the query
+ * parameter, so every request was answered hourly: bucket=day quietly returned
+ * the wrong resolution, and an invalid bucket returned a confident hourly answer
+ * and was BILLED, when the handler would have refused it as unmeasured and
+ * charged nothing. The seam between the router and the handler is where it
+ * lived, so that is where these tests sit.
+ */
+const HB = 3_600_000;
+const HT0 = 1_780_000_000_000;
+
+function historyStore() {
+  const rowsIn = [];
+  for (let i = 0; i < 6; i += 1) {
+    rowsIn.push({ ts: HT0 + i * HB, symbol: 'SOLUSDT', side: 'Buy', usd: 10, exchange: 'bybit' });
+  }
+  return sqliteFixtureStore(rowsIn);
+}
+
+test('bucket=day reaches the handler and is answered in daily buckets', async () => {
+  const s = await serve({ withPaywall: false, store: historyStore() });
+  try {
+    const res = await s.get('/v2/liquidations/history?symbol=SOL&bucket=day');
+    assert.equal(res.status, 200);
+    const b = await res.json();
+    assert.equal(b.status, 'measured');
+    assert.equal(b.value.bucket, 'day', 'bucket=day was ignored and answered as hourly');
+
+    const hourly = await (await s.get('/v2/liquidations/history?symbol=SOL&bucket=hour')).json();
+    assert.equal(hourly.value.bucket, 'hour');
+    assert.equal(hourly.value.series.length, 6);
+    assert.ok(
+      b.value.series.length < hourly.value.series.length,
+      'a daily answer must collapse the hourly buckets, not repeat them',
+    );
+    assert.equal(b.value.total_usd, hourly.value.total_usd, 'resolution changes, totals do not');
+  } finally {
+    await s.close();
+  }
+});
+
+test('an invalid bucket is unmeasured and unbilled, never a confident hourly answer', async () => {
+  const s = await serve({ withPaywall: false, store: historyStore() });
+  try {
+    const res = await s.get('/v2/liquidations/history?symbol=SOL&bucket=minute');
+    assert.equal(res.status, 503, 'an invalid bucket was billed as though it had been understood');
+    const b = await res.json();
+    assert.equal(b.status, 'unmeasured');
+    assert.match(b.basis, /bucket must be/);
+    assert.match(b.billing, /cost you nothing/);
+    assert.equal(b.value, null, 'a rejected parameter must not come back with data attached');
+  } finally {
+    await s.close();
+  }
+});
+
+test('an omitted bucket still defaults to hourly, so the fix broke no caller', async () => {
+  const s = await serve({ withPaywall: false, store: historyStore() });
+  try {
+    const b = await (await s.get('/v2/liquidations/history?symbol=SOL')).json();
+    assert.equal(b.status, 'measured');
+    assert.equal(b.value.bucket, 'hour');
+  } finally {
+    await s.close();
+  }
+});
+
+test('the legacy path answers from the same handler as its replacement', async () => {
+  const s = await serve({ withPaywall: false, store: new FakeTapeStore(rows()) });
+  try {
+    const current = await (await s.get('/v2/liquidations/window?symbol=SOL&hours=1')).json();
+    const legacy = await (await s.get('/v1/liquidations/window?symbol=SOL&hours=1')).json();
+    assert.equal(legacy.status, 'measured');
+    assert.equal(legacy.route, 'liquidation_window');
+    assert.deepEqual(legacy.value, current.value, 'the old URL must not answer something else');
+  } finally {
+    await s.close();
+  }
+});
+
+test('every catalog entry answers on both its current and its legacy path', async () => {
+  const s = await serve({ withPaywall: false, store: new MissingTapeStore() });
+  try {
+    for (const entry of compileCatalog()) {
+      assert.ok(entry.legacyPath, `${entry.id} lost its legacy alias`);
+      assert.match(entry.path, /^\/v2\//, `${entry.id} is not published under /v2`);
+      assert.match(entry.legacyPath, /^\/v1\//, `${entry.id} legacy alias is not a /v1 path`);
+      for (const path of [entry.path, entry.legacyPath]) {
+        const res = await s.get(`${path}?symbol=SOL`);
+        // No tape, so both must refuse to bill rather than 404.
+        assert.equal(res.status, 503, `${path} did not reach a handler`);
+        assert.equal((await res.json()).route, entry.id, `${path} reached the wrong handler`);
+      }
+    }
+  } finally {
+    await s.close();
+  }
+});
+
+test('only /v2 is advertised, on every surface an agent reads', async () => {
+  const s = await serve({ withPaywall: false });
+  try {
+    const catalog = await (await s.get('/catalog')).json();
+    for (const r of catalog.routes) {
+      assert.match(r.path, /^\/v2\//, `/catalog still advertises ${r.path}`);
+    }
+    assert.equal(JSON.stringify(catalog).includes('/v1/'), false, '/catalog leaks a legacy path');
+
+    const manifest = await (await s.get('/.well-known/x402')).json();
+    assert.equal(JSON.stringify(manifest).includes('/v1/'), false, 'the manifest leaks a legacy path');
+    for (const r of manifest.resources) {
+      assert.match(r.resource, /\/v2\//, `the manifest still advertises ${r.resource}`);
+    }
+
+    const html = await (await fetch(`${s.base}/`)).text();
+    assert.equal(html.includes('/v1/'), false, 'the landing page still lists a legacy path');
+    assert.ok(html.includes('/v2/liquidations/window'), 'the landing page lists no current path');
   } finally {
     await s.close();
   }

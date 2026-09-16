@@ -124,6 +124,10 @@ server.registerTool(
       asset: { asaId: NETWORK.usdcAsaId, symbol: 'USDC', decimals: 6 },
       routes: compiled.map((e) => ({
         tool: e.id,
+        // The path an operator would curl, and the one these tools call. Only
+        // the current path is listed: older paths still answer for callers that
+        // already hold them, but nothing here should send anybody to one.
+        path: e.path,
         price_usdc: e.price,
         unlocks: e.description,
         parameters: e.query ?? 'none',

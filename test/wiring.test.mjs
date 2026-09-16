@@ -70,7 +70,10 @@ test('routes derive from the catalog with no price written twice', () => {
   const compiled = compileCatalog();
   const routes = buildRoutes(compiled, cfg);
 
-  assert.equal(Object.keys(routes).length, compiled.length);
+  // Every entry contributes its current path and, where it has one, the legacy
+  // path it was first published under. Both are real routes behind the paywall.
+  const legacy = compiled.filter((e) => e.legacyPath).length;
+  assert.equal(Object.keys(routes).length, compiled.length + legacy);
   for (const entry of compiled) {
     const r = routes[entry.path];
     const [accept] = r.accepts;

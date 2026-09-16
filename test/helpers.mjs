@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
@@ -121,6 +122,38 @@ export class FakeTapeStore {
 
     throw new Error(`FakeTapeStore saw an unrecognised query shape: ${sql.slice(0, 90)}`);
   }
+}
+
+/**
+ * A fixture store backed by real sqlite, with the production schema verbatim.
+ *
+ * FakeTapeStore hand-matches the query shapes it knows, which is deliberate for
+ * the window and cascade routes but cannot answer the history route's bucketing
+ * SQL. History needs the real engine, so this one runs the actual statements
+ * against an in-memory database. It is also what the HTTP level route tests use,
+ * because the bug they exist to catch was a query parameter the server never
+ * forwarded, which no handler level test could see.
+ */
+export function sqliteFixtureStore(rowsIn = []) {
+  const db = new DatabaseSync(':memory:');
+  db.exec(`CREATE TABLE liquidations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL,
+    size REAL NOT NULL, price REAL NOT NULL, usd REAL NOT NULL,
+    exchange TEXT NOT NULL DEFAULT 'bybit')`);
+  const ins = db.prepare(
+    'INSERT INTO liquidations (ts,symbol,side,size,price,usd,exchange) VALUES (?,?,?,?,?,?,?)',
+  );
+  for (const r of rowsIn) ins.run(r.ts, r.symbol, r.side, 1, 1, r.usd, r.exchange ?? 'bybit');
+  return {
+    query(sql, params = []) {
+      try {
+        return { rows: db.prepare(sql).all(...params), failure: null };
+      } catch (err) {
+        return { rows: null, failure: `tape query failed: ${err.message}` };
+      }
+    },
+  };
 }
 
 export const NOW = 1_754_400_000_000;
