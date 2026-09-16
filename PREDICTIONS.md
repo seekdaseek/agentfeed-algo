@@ -94,9 +94,10 @@ the tag existed in accepts extra, still carry feePayer alone after seven
 further settlements between them, which is the write once behaviour this
 prediction rested on, observed rather than assumed.
 
-/v2/liquidations/window and /v2/liquidations/history have no record, because
-neither has been paid yet. That is consistent: a record appears at first
-settlement and not before.
+At the time of that reading /v2/liquidations/window and /v2/liquidations/history
+had no record, because neither had been paid. That is consistent: a record
+appears at first settlement and not before. The window path was paid later the
+same day and is covered in the addendum below.
 
 The second claim cannot be tested at this endpoint, and the reason matters more
 than the result. The tag parameter on the discovery endpoint does not filter.
@@ -127,12 +128,53 @@ parameter. The premise that a tag filtered search was missing our /v1 records
 does not hold up against this endpoint, because that search is not filtering at
 all.
 
-### Prediction 1, not yet checked
+### Prediction 2 addendum, 2026-09-16 at 14:44 UTC
 
-No call has been made for NOTACOIN or any other uncovered symbol, so this one
-stands open and unmodified. One piece of supporting evidence arrived on its
-own: the settlement ledger holds four canceled events, which is the hook that
-fires when x402 cancels a verified payment instead of settling it, so the
-cancel path this prediction depends on has already run in production. That is
-corroboration of the mechanism and not a test of the prediction. The result
-will be written here when the call is made.
+/v2/liquidations/window was first settled at 14:44:00 UTC by a paid call for
+SOL, in transaction YGCCB6OR73RV4VWKMHH2GCQYZ6PH4UB7BJIPOKRCWENUZZ3JT4EA at
+confirmed round 65101602, for 0.02 USDC. Its Bazaar record appeared three
+seconds later, at 14:44:03.528Z, carrying feePayer, decimals and tag in accepts
+extra, exactly like the three written at 11:34.
+
+That makes four of four. Every /v2 path that has been paid produced a record
+with the full extra on its first settlement, and none needed a second one. The
+Bazaar now holds eight records for algo.ochinimus.app: the four /v1 ones from
+2026-08-05 carrying feePayer alone, and four /v2 ones carrying all three keys.
+
+/v2/liquidations/history is still unpaid and still unlisted, deliberately. It
+costs 5.00 USDC a call and there is nothing left to learn from paying it that
+the other four have not already settled.
+
+### Prediction 1, confirmed on mainnet 2026-09-16
+
+Run on camera from /opt/agentfeed-algo with scripts/pay.mjs against
+/v2/liquidations/window?symbol=NOTACOIN&hours=24. Every clause held.
+
+Observed: HTTP status 503. Envelope status unmeasured. Failure reason
+symbol_not_covered. The billing line read "not billable; this response cost you
+nothing". paid was false, because no PAYMENT-RESPONSE header came back, and
+settle was null.
+
+The money half needed chain evidence rather than a response body, because a
+server can say whatever it likes about its own billing. The payer
+E3I2CZPCLKIEP2LYDIR62TZBNJT74EA2ATLWYNFGSA335HA7PQJLTFLZTU read 0.21 USDC
+before the refused call and still read 0.21 at the start of the paid call that
+followed it. On chain, the payer's USDC transfers over the six hours before the
+check are exactly four: 0.05, 0.10 and 0.03 at 11:34 UTC from the listing
+payments, and 0.02 at 14:44:00 UTC in transaction
+YGCCB6OR73RV4VWKMHH2GCQYZ6PH4UB7BJIPOKRCWENUZZ3JT4EA at confirmed round
+65101602 for the paid SOL call. There is no fifth transfer. Nothing exists on
+chain for the refused call at all. The balance afterwards is 0.19 USDC.
+
+That absence is the whole point. The refusal is not a refund and not a
+reversal, and there is no transfer to look up and explain, because the code
+path that creates one is skipped as soon as the handler answers 503. Both
+mechanisms behaved exactly as written. Ours returned unmeasured rather than an
+empty market for a symbol the tape has never carried, and turned that into a
+503 rather than a 200. The library cancelled the verified payment on a status
+of 400 or above and never asked the facilitator to settle it.
+
+So a caller who asks for a symbol we do not cover pays nothing, and can tell a
+coverage gap apart from a quiet market. That is the behaviour the unmeasured
+status exists for, now demonstrated with money on the line rather than asserted
+in a README.
