@@ -1,6 +1,6 @@
 {
   "name": "@seekdaseek/agentfeed-algo",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A paid x402 data API on Algorand mainnet, with an MCP server. Sells a cross-exchange liquidation tape per call in USDC, and says when it does not know.",
   "main": "src/server.mjs",
   "directories": {
@@ -19,14 +19,18 @@
     "algorand",
     "usdc",
     "mcp",
-    "agent",
-    "micropayments",
-    "market-data",
     "liquidations",
-    "model-context-protocol"
+    "market-data",
+    "ai-agents",
+    "micropayments"
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seekdaseek/agentfeed-algo.git"
+  },
+  "homepage": "https://algo.ochinimus.app",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@x402/avm": "^2.21.0",
