@@ -14,7 +14,7 @@ Built for the Algorand Foundation Global x402 Challenge.
     catalog   https://algo.ochinimus.app/catalog
     manifest  https://algo.ochinimus.app/.well-known/x402
 
-Free to inspect, paid to read. Call any route without payment and you get a 402 whose body carries the route, the price, the asset and what the payment unlocks, with the payment challenge itself base64 in the PAYMENT-REQUIRED header. The tape behind it has recorded close to 900 symbols on Binance, Bybit and OKX since July 8 2026, and it adds around 80,000 liquidation rows a day.
+Free to inspect, paid to read. Call any route without payment and you get a 402 whose body carries the route, the price, the asset and what the payment unlocks, with the payment challenge itself base64 in the PAYMENT-REQUIRED header. The tape behind it has recorded close to 900 symbols on Binance, Bybit and OKX since July 8 2026, and over the seven full days before September 16 2026 it averaged about 73,000 liquidation rows a day.
 
 ## What it sells
 
