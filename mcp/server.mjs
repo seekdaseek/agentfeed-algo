@@ -24,6 +24,7 @@
  * looks like an answer.
  */
 
+import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -103,7 +104,11 @@ async function callPaid(entry, params) {
   });
 }
 
-const server = new McpServer({ name: 'agentfeed-algo', version: '0.1.0' });
+// The version the MCP handshake reports is package.json's, read at start-up. It
+// was a literal '0.1.0' through 0.2.1, so every client was told it was talking to
+// the first release. npm always ships package.json, whatever `files` lists.
+const { version: PACKAGE_VERSION } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const server = new McpServer({ name: 'agentfeed-algo', version: PACKAGE_VERSION });
 
 // ---- free tools ----
 
