@@ -1,6 +1,6 @@
 {
   "name": "@seekdaseek/agentfeed-algo",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A paid x402 data API on Algorand mainnet, with an MCP server. Sells a cross-exchange liquidation tape per call in USDC, and says when it does not know.",
   "main": "src/server.mjs",
   "directories": {

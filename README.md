@@ -14,7 +14,7 @@ Built for the Algorand Foundation Global x402 Challenge.
     catalog   https://algo.ochinimus.app/catalog
     manifest  https://algo.ochinimus.app/.well-known/x402
 
-Free to inspect, paid to read. Call any route without payment and you get a 402 whose body carries the route, the price, the asset and what the payment unlocks, with the payment challenge itself base64 in the PAYMENT-REQUIRED header. The tape behind it has recorded close to 900 symbols on Binance, Bybit and OKX since July 8 2026, and over the seven full days before September 16 2026 it averaged about 73,000 liquidation rows a day.
+Free to inspect, paid to read. Call any route without payment and you get a 402 whose body carries the route, the price, the asset and what the payment unlocks, with the payment challenge itself base64 in the PAYMENT-REQUIRED header. The tape behind it has recorded over 900 symbols on Binance, Bybit and OKX since July 8 2026, and over the seven full days before September 16 2026 it averaged about 73,000 liquidation rows a day.
 
 ## What it sells
 
@@ -45,7 +45,7 @@ Settlement runs through the GoPlausible facilitator on Algorand mainnet, and pay
 
 The endpoint is a URL, which is invisible to the thing meant to pay for it. So this ships an MCP server too.
 
-    npx -y @seekdaseek/agentfeed-algo-mcp
+    npx -y -p @seekdaseek/agentfeed-algo agentfeed-algo-mcp
 
 Or in an MCP client config, as a server named agentfeed-algo running `npx -y @seekdaseek/agentfeed-algo` with the binary `agentfeed-algo-mcp`, and one environment variable, `ALGO_PAYER_MNEMONIC`, holding the mnemonic for an Algorand account that has USDC and is opted in to asset 31566704.
 
